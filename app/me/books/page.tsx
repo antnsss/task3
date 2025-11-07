@@ -1,71 +1,125 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { onAuthStateChanged } from "firebase/auth";
+import { getUserBooks, addBook, deleteBook } from "@/lib/firestore";
 import { auth } from "@/lib/firebase";
-import { getUserBooks, addBook, deleteBook } from "@/actions/bookActions";
-import { Book } from "@/types/Book";
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardContent,
+  CardFooter,
+} from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Separator } from "@/components/ui/separator";
 
 export default function MyBooksPage() {
-  const [user, setUser] = useState<any>(null);
-  const [books, setBooks] = useState<Book[]>([]);
+  const [books, setBooks] = useState<any[]>([]);
   const [name, setName] = useState("");
   const [author, setAuthor] = useState("");
-  const [photo, setPhoto] = useState("");
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (u) => {
-      if (u) {
-        setUser(u);
-        const myBooks = await getUserBooks(u.uid);
-        setBooks(myBooks);
-      } else {
-        setUser(null);
-        setBooks([]);
-      }
-    });
-    return () => unsub();
+    async function loadBooks() {
+      if (!auth.currentUser) return;
+      const list = await getUserBooks(auth.currentUser.uid);
+      setBooks(list);
+    }
+    loadBooks();
   }, []);
 
-  const handleAddBook = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!user) return alert("Увійдіть для додавання книги");
+  async function handleAdd() {
+    if (!auth.currentUser || !name.trim() || !author.trim()) return;
 
-    await addBook({ userId: user.uid, name, author, photo });
-    const updated = await getUserBooks(user.uid);
-    setBooks(updated);
-    setName(""); setAuthor(""); setPhoto("");
-  };
+    setLoading(true);
+    await addBook(
+      {
+        name,
+        author,
+        available: true,
+        ownerId: auth.currentUser.uid,
+        createdAt: Date.now(),
+      },
+      auth.currentUser.uid
+    );
 
-  const handleDelete = async (id: string) => {
-    await deleteBook(id);
-    setBooks(books.filter(b => b.id !== id));
-  };
+    setName("");
+    setAuthor("");
+    const list = await getUserBooks(auth.currentUser.uid);
+    setBooks(list);
+    setLoading(false);
+  }
 
-  if (!user) return <p>Увійдіть, щоб переглянути свої книги</p>;
+  async function handleDelete(id: string) {
+    if (!auth.currentUser) return;
+    await deleteBook(id, auth.currentUser.uid);
+    setBooks((prev) => prev.filter((b) => b.id !== id));
+  }
 
   return (
-    <main className="p-6 max-w-2xl mx-auto">
-      <h1 className="text-2xl font-bold mb-4">Мої книги</h1>
-
-      <form onSubmit={handleAddBook} className="flex flex-col gap-3 mb-6">
-        <input value={name} onChange={e => setName(e.target.value)} placeholder="Назва" className="border p-2 rounded" required />
-        <input value={author} onChange={e => setAuthor(e.target.value)} placeholder="Автор" className="border p-2 rounded" required />
-        <input value={photo} onChange={e => setPhoto(e.target.value)} placeholder="Фото URL" className="border p-2 rounded" />
-        <button className="bg-blue-600 text-white p-2 rounded">Додати книгу</button>
-      </form>
-
-      <ul className="space-y-3">
-        {books.map(b => (
-          <li key={b.id} className="border p-3 flex justify-between items-center">
+    <main className="max-w-2xl mx-auto p-6">
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-2xl font-semibold">📚 My Books</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-col gap-3 mb-4">
             <div>
-              <h2 className="font-semibold">{b.name}</h2>
-              <p className="text-gray-600">{b.author}</p>
+              <Label htmlFor="name">Book Name</Label>
+              <Input
+                id="name"
+                placeholder="Enter book name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+              />
             </div>
-            <button onClick={() => handleDelete(b.id)} className="text-red-500 hover:text-red-700">🗑</button>
-          </li>
-        ))}
-      </ul>
+            <div>
+              <Label htmlFor="author">Author</Label>
+              <Input
+                id="author"
+                placeholder="Enter author"
+                value={author}
+                onChange={(e) => setAuthor(e.target.value)}
+              />
+            </div>
+            <Button onClick={handleAdd} disabled={loading}>
+              {loading ? "Adding..." : "Add Book"}
+            </Button>
+          </div>
+
+          <Separator className="my-4" />
+
+          <ul className="space-y-3">
+            {books.length === 0 ? (
+              <p className="text-gray-500 text-center">No books yet 😔</p>
+            ) : (
+              books.map((b) => (
+                <li
+                  key={b.id}
+                  className="flex justify-between items-center border p-3 rounded-lg hover:bg-muted transition"
+                >
+                  <div>
+                    <p className="font-semibold">{b.name}</p>
+                    <p className="text-sm text-gray-600">{b.author}</p>
+                  </div>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => handleDelete(b.id)}
+                  >
+                    Delete
+                  </Button>
+                </li>
+              ))
+            )}
+          </ul>
+        </CardContent>
+        <CardFooter className="text-sm text-gray-500 justify-center">
+          Manage your personal book collection
+        </CardFooter>
+      </Card>
     </main>
   );
 }
